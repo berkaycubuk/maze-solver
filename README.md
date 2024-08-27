@@ -9,3 +9,5 @@ This project uses Raylib and C.
 Make sure you have [raylib](https://www.raylib.com/) installed in your environment.
 
 Run `make run` to build, and run the project.
+
+![](./generator-demo.gif)

@@ -1,3 +1,8 @@
+/*
+ * MazeSolver v1.0.0
+ *
+ * Created by: Berkay Çubuk <berkay@berkaycubuk.com>
+ */
 #include "raylib.h"
 #include <unistd.h>
 #include <stdio.h>
@@ -6,9 +11,11 @@
 #include <time.h>
 #include <stdlib.h>
 
-#define MAZE_ROWS 40
-#define MAZE_COLS 40
+#define MAZE_ROWS 80
+#define MAZE_COLS 80
 #define GRID_SQUARE_SIZE 40
+
+int solved = 0;
 
 typedef struct {
 	int isStart;
@@ -29,18 +36,25 @@ void solver_stack_dehasher(int hash, int* x, int* y) {
 	*y = (hash - *x) / MAZE_ROWS;
 }
 
-void highlight_solution(int maze[MAZE_ROWS][MAZE_COLS], int solver_stack[MAZE_ROWS * MAZE_COLS], int solver_stack_cursor) {
-	for (int i = 0; i < solver_stack_cursor; i++) {
-		int x, y;
-		solver_stack_dehasher(solver_stack[i], &x, &y);
-		if (maze[y][x] != 4) {
-			maze[y][x] = 3;
-		}
-	}
-}
-
 int solver_stack_hasher(int x, int y) {
 	return (y * MAZE_ROWS) + x;
+}
+
+void shuffle(int array[4][2]) {
+    for (int i = 0; i < 4; i++) {
+        int j = rand() % 4;
+	
+        int temp[2];
+
+	temp[0] = array[i][0];
+	temp[1] = array[i][1];
+
+        array[i][0] = array[j][0];
+        array[i][1] = array[j][1];
+
+        array[j][0] = temp[0];
+        array[j][1] = temp[1];
+    }
 }
 
 // Depth First Search
@@ -59,36 +73,60 @@ void dfs_solver(
 
 	printf("X: %d, Y: %d, Cursor: %d\n", *x, *y, *solver_stack_cursor);
 
+	// add current position to the solver_stack
+	solver_stack[*solver_stack_cursor] = solver_stack_hasher(*x, *y);
+	*solver_stack_cursor += 1;
+
 	if (maze[*y][*x]->isFinish == 1) { // found the finish
 		printf("Found the finish!");
-		
-		// highlight the solution
-		//highlight_solution(maze, solver_stack, *solver_stack_cursor);
+
+		solved = 1;
 
 		return;
 	}
 
-	solver_stack[*solver_stack_cursor] = solver_stack_hasher(*x, *y);
-	*solver_stack_cursor += 1;
+	// mark current position as visited
 	maze[*y][*x]->isVisited = 1;
 	int moved = 0;
 
-	if (*x < MAZE_COLS - 1 && maze[*y][*x]->rightWall == 0 && maze[*y][*x + 1]->isVisited == 0) {
-		*x += 1;
-		moved = 1;
-		printf("moving right");
-	} else if (*y < MAZE_ROWS - 1 && maze[*y][*x]->downWall == 0 && maze[*y + 1][*x]->isVisited == 0) {
-		*y += 1;
-		moved = 1;
-		printf("moving down");
-	} else if (*x >= 1 && maze[*y][*x]->leftWall == 0 && maze[*y][*x - 1]->isVisited == 0) {
-		*x -= 1;
-		moved = 1;
-		printf("moving left");
-	} else if (*y >= 1 && maze[*y][*x]->topWall == 0 && maze[*y - 1][*x]->isVisited == 0) {
-		*y -= 1;
-		moved = 1;
-		printf("moving up");
+	int directions[4][2] = {
+		{-1, 0}, // left
+		{0, 1},  // down
+		{1, 0},  // right
+		{0, -1}  // up
+	};
+
+	shuffle(directions);
+
+	for (int i = 0; i < 4; i++) {
+		int newX = *x + directions[i][0];
+		int newY = *y + directions[i][1];
+
+		if (
+			newX < MAZE_COLS && newX >= 0 &&
+			newY < MAZE_ROWS && newY >= 0 &&
+			maze[newY][newX]->isVisited == 0
+		) {
+			int valid = 1;
+			if (directions[i][0] > 0 && maze[*y][*x]->rightWall == 1) { // going right
+				valid = 0;
+			} else if (directions[i][0] < 0 && maze[*y][*x]->leftWall == 1) { // going left
+				valid = 0;
+			}
+
+			if (directions[i][1] > 0 && maze[*y][*x]->downWall == 1) { // going down
+				valid = 0;
+			} else if (directions[i][1] < 0 && maze[*y][*x]->topWall == 1) { // going up
+				valid = 0;
+			}
+
+			if (valid == 1) {
+				*x = newX;
+				*y = newY;
+				moved = 1;
+				break;
+			}
+		}
 	}
 
 	if (moved == 0) {
@@ -106,16 +144,7 @@ void dfs_solver(
 	}
 }
 
-void shuffle(int *array, int size) {
-    for (int i = size - 1; i > 0; i--) {
-        int j = rand() % (i + 1);
-        int temp = array[i];
-        array[i] = array[j];
-        array[j] = temp;
-    }
-}
-
-void generate_maze(Cell *maze[MAZE_ROWS][MAZE_COLS], int x, int y, int* end_x, int* end_y, int maze_stack[MAZE_ROWS * MAZE_COLS], int *maze_stack_cursor) {
+void generate_maze(Cell *maze[MAZE_ROWS][MAZE_COLS], int x, int y, int maze_stack[MAZE_ROWS * MAZE_COLS], int *maze_stack_cursor) {
 	int valid = 0;
 	for (int i = 0; i < MAZE_ROWS; i++) {
 		for (int j = 0; j < MAZE_COLS; j++) {
@@ -143,19 +172,15 @@ void generate_maze(Cell *maze[MAZE_ROWS][MAZE_COLS], int x, int y, int* end_x, i
 		{0, -1}  // up
 	};
 
-	//shuffle((int *)directions, 4);
+	shuffle(directions);
 
 	int moved = 0;
 	for (int i = 0; i < 4; i++) {
-		int index = rand() % (i + 1);
-		int newX = x + directions[index][0];
-		int newY = y + directions[index][1];
+		int newX = x + directions[i][0];
+		int newY = y + directions[i][1];
 
 		if (newX >= 0 && newX < MAZE_COLS && newY >= 0 && newY < MAZE_ROWS && maze[newY][newX]->isVisited == 0) {
-			//printf("newX: %d, x: %d, newY: %d, y: %d\n", newX, x, newY, y);
 			moved = 1;
-			*end_x = newX;
-			*end_y = newY;
 
 			if (x == newX) {
 				if (newY > y) {
@@ -179,8 +204,7 @@ void generate_maze(Cell *maze[MAZE_ROWS][MAZE_COLS], int x, int y, int* end_x, i
 				printf("---- NOOOO! ---\n");
 			}
 
-
-			generate_maze(maze, newX, newY, end_x, end_y, maze_stack, maze_stack_cursor);
+			generate_maze(maze, newX, newY, maze_stack, maze_stack_cursor);
 		}
 	}
 
@@ -197,7 +221,7 @@ void generate_maze(Cell *maze[MAZE_ROWS][MAZE_COLS], int x, int y, int* end_x, i
 			*maze_stack_cursor -= 1;
 			//maze_stack[*maze_stack_cursor] = -1;
 			printf("X: %d, Y: %d, %d", tempX, tempY, maze_stack[*maze_stack_cursor]);
-			generate_maze(maze, tempX, tempY, end_x, end_y, maze_stack, maze_stack_cursor);
+			generate_maze(maze, tempX, tempY, maze_stack, maze_stack_cursor);
 		}
 	}
 }
@@ -225,7 +249,7 @@ void init_maze(Cell *maze[MAZE_ROWS][MAZE_COLS]) {
 	int maze_stack_cursor = 0;
 
 	int end_x = MAZE_COLS - 1, end_y = MAZE_ROWS - 1;
-	generate_maze(maze, 0, 0, &end_x, &end_y, maze_stack, &maze_stack_cursor);
+	generate_maze(maze, 0, 0, maze_stack, &maze_stack_cursor);
 
 	// mark the finish position
 	maze[0][0]->isStart = 1;
@@ -241,20 +265,14 @@ void init_maze(Cell *maze[MAZE_ROWS][MAZE_COLS]) {
 
 void renderCell(Cell* cell, int x, int y) {
 	if (cell->isVisited == 1) {
-		//DrawRectangle(x, y, GRID_SQUARE_SIZE, GRID_SQUARE_SIZE, BLUE);
 		DrawCircle(x + (GRID_SQUARE_SIZE / 2), y + (GRID_SQUARE_SIZE / 2), 6.0f, GRAY);
 	}
-
 	if (cell->isStart == 1) {
-		//DrawRectangle(x, y, GRID_SQUARE_SIZE, GRID_SQUARE_SIZE, GREEN);
 		DrawCircle(x + (GRID_SQUARE_SIZE / 2), y + (GRID_SQUARE_SIZE / 2), 10.0f, GREEN);
 	}
-
 	if (cell->isFinish == 1) {
-		//DrawRectangle(x, y, GRID_SQUARE_SIZE, GRID_SQUARE_SIZE, GREEN);
 		DrawCircle(x + (GRID_SQUARE_SIZE / 2), y + (GRID_SQUARE_SIZE / 2), 10.0f, RED);
 	}
-
 	if (cell->rightWall == 1) {
 		DrawLine(x + GRID_SQUARE_SIZE, y, x + GRID_SQUARE_SIZE, y + GRID_SQUARE_SIZE, WHITE);
 	}
@@ -288,14 +306,6 @@ void renderSolution(int solution_stack[MAZE_ROWS * MAZE_COLS], int* solution_sta
 		prevY += offsetY + (GRID_SQUARE_SIZE / 2);
 
 		DrawLine(x, y, prevX, prevY, BLUE);
-
-		if (i != 1) {
-			DrawCircle(prevX, prevY, 6.0f, BLUE);
-		}
-	}
-
-	if (*solution_stack_cursor > 1) {
-		DrawCircle(x, y, 6.0f, BLUE);
 	}
 }
 
@@ -316,41 +326,8 @@ int main(void) {
 	camera.zoom = 1.0f;
 
 	// maze
-	// 0 => wall
-	// 1 => walkable
-	// 2 => visited
-	// 3 => solution
-	// 4 => start
-	// 5 => finish
-	//int maze[MAZE_ROWS][MAZE_COLS];
-	//init_maze(maze);
 	Cell *maze[MAZE_ROWS][MAZE_COLS];
 	init_maze(maze);
-	/*
-	{ { visited, right, down, left, top } }
-	int maze[MAZE_ROWS][MAZE_COLS] = {
-		{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-		{0, 4, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 0},
-		{0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0},
-		{0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0},
-		{0, 1, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0},
-		{0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0},
-		{0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0},
-		{0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0},
-		{0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
-		{0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0},
-		{0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0},
-		{0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0},
-		{0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0},
-		{0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0},
-		{0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 0},
-		{0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0},
-		{0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0},
-		{0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0},
-		{0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 5, 0},
-		{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-	};
-	*/
 
 	int solver_stack[MAZE_ROWS * MAZE_COLS];
 	int solver_stack_cursor = 0;
@@ -396,6 +373,7 @@ int main(void) {
 			currentRow = 0;
 			currentCol = 0;
 			paused = 0;
+			solved = 0;
 		}
 
 		if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
@@ -417,7 +395,7 @@ int main(void) {
 			camera.zoom = Clamp(camera.zoom*scaleFactor, 0.125f, 64.0f);
 		}
 
-		if (paused == 0) dfs_solver(maze, solver_stack, &solver_stack_cursor, &currentCol, &currentRow);
+		if (paused == 0 && solved == 0) dfs_solver(maze, solver_stack, &solver_stack_cursor, &currentCol, &currentRow);
 
 		BeginDrawing();
 
